@@ -1,22 +1,29 @@
 #include <cairo.h>
 #include <gtk/gtk.h>
 #include <math.h>
-#include <time.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include "gamelife.h"
+#include "errors.c"
 
-int universeSize=50;
-//int generations;
+int universeSize = 50;
+int generations = -1;
+guint interval = 100; //интервал таймера, msec
+
+// Запущен ли таймер
+static gboolean startTimer = FALSE;
+
+//Продолжать ли таймер
+static gboolean continueTimer = FALSE;
 
 bool universe[102][102]; // map
-// bool next[102][102]; // map
+bool next[102][102]; // map
 
 static void createUniverse()
 {	int k;
 	int j;
-   for(k=10; k <= universeSize-10; k++) {
-       for(j=10; j <= universeSize-10; j++) {
+   for(k=1; k <= universeSize; k++) {
+       for(j=1; j <= universeSize; j++) {
 	if((rand()%10) == 0)
            universe[k][j] = true;
        }
@@ -38,6 +45,72 @@ static bool isAlive(int k, int j)
           return true;
    return false;
 };
+
+
+static gboolean newGeneration(gpointer data)
+{
+   GtkWidget *window = data;
+   if(generations < 0)
+       generations++;
+   int notChanged=0;
+	int k;
+	int j;
+   for(k=1; k <= universeSize; k++) {
+       for(j=1; j <= universeSize; j++) {
+           next[k][j] = isAlive(k, j);
+           if(next[k][j] == universe[k][j])
+               notChanged++;
+       }
+   }
+   if(notChanged == universeSize*universeSize) {
+       showLostSence(data);
+       continueTimer = FALSE; //остановить таймер
+       return continueTimer;
+   }
+   for(k=1; k <= universeSize; k++) {
+       for(j=1; j <= universeSize; j++) {
+           universe[k][j] = next[k][j];
+       }
+   }
+   gtk_widget_queue_draw(data); // отрисовка обновлённого экрана
+   generations--;
+   if(generations == 0) {
+     showTheEnd(data);
+     continueTimer = FALSE; //остановить таймер
+   }
+  return continueTimer;
+}
+
+static void startGame(gpointer data)
+{
+    GtkWidget *window = data;
+    if(!startTimer)
+    {
+        g_timeout_add(interval, newGeneration, window);
+        startTimer = TRUE;
+        continueTimer = TRUE;
+    }
+}
+
+static void pauseGame(gpointer data)
+//исправить resume
+{
+    if(startTimer)
+    {
+        GtkWidget *window = data;
+        continueTimer = !continueTimer;
+        if(continueTimer)
+        {
+            g_timeout_add(interval, newGeneration, window);
+        }
+        else
+        {
+		//если таймер на паузе
+            /*Decrementing because timer will be hit one more time before expiring*/
+            //sec_expired--;
+        }
+    }
+}
 
 /*
 static void setUniverseSize(const int s)
@@ -64,7 +137,7 @@ static gboolean on_expose_event(GtkWidget *widget, cairo_t *cr,
 static void do_drawing(cairo_t *cr, GtkWidget *widget)
 {
   GtkWidget *win = gtk_widget_get_toplevel(widget);
-//начало отрисовки сетки
+//начало отрисовки сетки paintGrid(...)
   cairo_set_line_width(cr, 0.5);  
   cairo_set_source_rgba(cr, 0, 0, 0, 0.5);
 
@@ -131,7 +204,7 @@ int main( int argc, char *argv[])
   GtkToolItem *sep1;
   GtkToolItem *play;
   GtkToolItem *pause;
-  GtkToolItem *exitt;
+  GtkToolItem *exit;
 
   GtkWidget *darea;
 
@@ -176,8 +249,8 @@ int main( int argc, char *argv[])
   sep1 = gtk_separator_tool_item_new();
   gtk_toolbar_insert(GTK_TOOLBAR(toolbar), sep1, -1); 
 
-  exitt = gtk_tool_button_new_from_stock(GTK_STOCK_QUIT);
-  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), exitt, -1);
+  exit = gtk_tool_button_new_from_stock(GTK_STOCK_QUIT);
+  gtk_toolbar_insert(GTK_TOOLBAR(toolbar), exit, -1);
 
   gtk_box_pack_start(GTK_BOX(vbox), toolbar, FALSE, FALSE, 0);
 
@@ -185,11 +258,22 @@ int main( int argc, char *argv[])
 
   g_signal_connect(G_OBJECT(new), "clicked",
 	G_CALLBACK(createUniverse), NULL);	
-  
   g_signal_connect(G_OBJECT(new), "destroy",
 	G_CALLBACK(createUniverse), NULL); 
+ 
+  g_signal_connect(G_OBJECT(open), "clicked", G_CALLBACK(createUniverse), NULL);	  
+  g_signal_connect(G_OBJECT(open), "destroy",
+	G_CALLBACK(showTheEnd), NULL); 
 
-  g_signal_connect(G_OBJECT(exitt), "clicked", 
+  g_signal_connect(G_OBJECT(play), "clicked", G_CALLBACK(startGame), window);
+  g_signal_connect(G_OBJECT(play), "destroy",
+	G_CALLBACK(startGame), NULL); 
+
+  g_signal_connect(G_OBJECT(pause), "clicked", G_CALLBACK(pauseGame), window);
+  g_signal_connect(G_OBJECT(pause), "destroy",
+	G_CALLBACK(pauseGame), NULL); 
+
+  g_signal_connect(G_OBJECT(exit), "clicked", 
         G_CALLBACK(gtk_main_quit), NULL);
   g_signal_connect_swapped(G_OBJECT(window), "destroy",
         G_CALLBACK(gtk_main_quit), NULL);
@@ -202,6 +286,10 @@ int main( int argc, char *argv[])
  
 
   gtk_widget_show_all(window);
+
+   g_timeout_add(interval, newGeneration, window);
+   continueTimer = TRUE;
+   startTimer  = TRUE;
 
   gtk_main();
 
