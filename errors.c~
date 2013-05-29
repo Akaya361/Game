@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include "gamelife.h"
 
-void showLostSence(gpointer data)
+void showTheEnd(gpointer data)
 {
   GtkWidget *window = data;
   GtkWidget *dialog;
